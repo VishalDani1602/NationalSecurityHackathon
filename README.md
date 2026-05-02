@@ -1,69 +1,90 @@
 # CustodyOS
 
-CustodyOS is a software-only multi-sensor target custody and reacquisition demo for National Security Hackathon Problem Statement 1. It shows how an operator can maintain custody of a moving target when individual sensors are intermittent, degraded, spoofed, or denied.
+CustodyOS is a browser-based multi-sensor custody and reacquisition simulator. It models a moving maritime target, degraded sensor coverage, spoofed cooperative reports, and explainable fusion logic for maintaining custody when no single sensor is fully reliable.
 
-## Problem Fit
+The app runs entirely locally. It does not require live sensor feeds, cloud services, maps, or external APIs.
 
-Problem Statement 1 asks for resilient target custody across contested sensing conditions. CustodyOS addresses that by treating every sensor report as probabilistic evidence, not ground truth. The demo fuses synthetic radar, EO/IR, RF, and open-source-style detections into one custody timeline, then explains when custody is strong, degrading, lost, or reacquired.
+## Features
 
-The core operational value is speed: when confidence drops, CustodyOS predicts where the target should be next, ranks available sensors by expected reacquisition value, and presents the next best action before the operator fully loses the track.
+- Deterministic maritime scenario with one primary vessel, decoys, spoofed AIS-style reports, missed detections, and false positives.
+- Simulated radar, EO, RF, and AIS-style sensor feeds.
+- Fusion engine with prediction, detection association, uncertainty growth, confidence scoring, and reacquisition states.
+- Operator dashboard with a map-style situation view, target uncertainty, sensor coverage beams, replay controls, and sensor health.
+- Explainable custody panel showing accepted/rejected detection rationale and next-best-sensor tasking.
 
-## Demo Story
+## How It Works
 
-1. A target enters the area of interest and is detected by multiple simulated sensors.
-2. CustodyOS correlates those detections into one fused track with confidence, uncertainty, and sensor provenance.
-3. A scripted disruption removes or degrades one sensor feed, causing the custody score to fall.
-4. The system projects a search area, recommends the best reacquisition sensor, and marks the decision in the event log.
-5. A later detection lands inside the predicted area, the target is reacquired, and the timeline shows the full custody chain.
+CustodyOS treats each sensor report as probabilistic evidence. The fusion loop predicts the target state, scores incoming detections against an association gate, updates the fused track when evidence is credible, and expands uncertainty when detections are missing or rejected.
 
-## Technical Architecture
+When custody degrades, the app ranks available sensors by expected reacquisition value and presents a tasking recommendation. The replay timeline shows how confidence changes as the target is lost, spoofed reports appear, and later detections restore custody.
 
-- **Sensor adapters:** Normalize detections from simulated radar, EO/IR, RF, and open-source feeds into timestamped observations with confidence, location, and provenance.
-- **Fusion and custody engine:** Associates observations to tracks, updates the fused target state, maintains uncertainty, and computes custody status.
-- **Reacquisition planner:** Projects target motion under uncertainty, generates likely search areas, and ranks sensors or sectors by expected reacquisition value.
-- **Operator UI:** Displays the fused track, sensor health, custody confidence, recommended action, and audit timeline.
-- **Scenario runner:** Replays a deterministic disruption scenario so judges can see custody loss and reacquisition in under three minutes.
+## Tech Stack
 
-## Judging Criteria Mapping
+- React
+- TypeScript
+- Vite
+- Lucide icons
+- SVG-based local situation map
 
-| Criterion | CustodyOS Evidence |
-| --- | --- |
-| Mission relevance | Directly demonstrates resilient custody and reacquisition under sensor degradation. |
-| Technical execution | Uses probabilistic fusion, confidence scoring, uncertainty projection, and explainable sensor recommendations. |
-| Demo clarity | Scripted scenario shows target acquisition, disruption, custody degradation, recommended reacquisition, and successful reacquisition. |
-| Feasibility | Runs as a software-only simulation, requiring no hardware, classified data, or external sensor access. |
-| Transition potential | Adapter-based architecture can connect to real sensor feeds, C2 systems, or after-action analysis tools. |
+## Getting Started
 
-## Run Commands
-
-From the repository root:
+Install dependencies:
 
 ```bash
 npm install
+```
+
+Run the development server:
+
+```bash
 npm run dev
 ```
 
-Open the local URL printed by the dev server. The expected default is:
+Open the local URL printed by Vite. The default is usually:
 
 ```text
 http://localhost:5173
 ```
 
-Useful validation and production-preview commands:
+Build for production:
 
 ```bash
 npm run build
+```
+
+Preview the production build:
+
+```bash
 npm run preview
 ```
 
-The current package scripts are `dev`, `build`, and `preview`. The demo scenario is expected to run in the browser UI; if a later implementation adds a dedicated scenario script, keep it as a thin wrapper around the same deterministic flow.
+## Project Structure
 
-## 3-Minute Pitch
+```text
+src/
+  App.tsx                     Main application wiring
+  App.css                     Dashboard styling
+  components/                 UI panels and replay controls
+  data/custodyScenario.ts     Default generated scenario export
+  lib/fusion.ts               Fusion, association, scoring, and track logic
+  lib/scenario.ts             Deterministic scenario generator
+  lib/types.ts                Shared scenario and fusion types
+docs/
+  demo-script.md              Demo run-of-show and talking points
+```
 
-CustodyOS solves a simple operational problem: in contested environments, one sensor is never enough. A camera can lose line of sight, radar can be degraded, RF can be noisy, and the target keeps moving. Operators need a system that preserves custody across those gaps and tells them where to look next.
+## Core Concepts
 
-Our demo starts with a target detected by multiple simulated sensors. CustodyOS fuses those reports into one track, shows confidence and uncertainty, and records which sensors contributed. Then we trigger a disruption. One feed drops out, the confidence score falls, and the system projects the target's likely search area instead of pretending it still has perfect knowledge.
+**Custody:** The system's current confidence that the fused track still represents the target.
 
-The important part is reacquisition. CustodyOS ranks the available sensors and recommends the highest-value cue. When a later detection appears inside the predicted area, the system marks the target as reacquired and shows the full custody chain from first detection through loss risk to recovery.
+**Association gate:** The spatial and confidence threshold used to decide whether a detection belongs to the existing track.
 
-This is software-only, repeatable, and extensible. The same architecture can accept real sensor adapters later, but the hackathon demo proves the core behavior now: preserve target custody, explain confidence, and accelerate reacquisition when the environment gets messy.
+**Uncertainty:** The expanding region where the target is likely to be when sensor evidence is weak or missing.
+
+**Reacquisition:** The process of using new evidence inside the predicted region to restore confidence in the track.
+
+**Next-best sensor:** The sensor with the strongest expected value for reducing uncertainty or confirming the target.
+
+## Current Status
+
+CustodyOS is a working local prototype. The scenario, fusion logic, UI, and replay controls are implemented and can be run from the repository root with the commands above.
