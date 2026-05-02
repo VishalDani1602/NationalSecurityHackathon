@@ -6,210 +6,148 @@ import { MapSituationPanel } from "./components/MapSituationPanel";
 import { NextBestSensor } from "./components/NextBestSensor";
 import { SensorStatusPanel } from "./components/SensorStatusPanel";
 import { TimelineReplay } from "./components/TimelineReplay";
-import type { CustodyFrame, Sensor } from "./components/types";
+import type { CustodyFrame, Sensor, SensorStatus, TrackPoint } from "./components/types";
+import { runFusion } from "./lib/fusion";
+import { scenario } from "./lib/scenario";
+import type { FusionFrame, Sensor as ScenarioSensor } from "./lib/types";
 
-const sensors: Sensor[] = [
-  {
-    id: "S1",
-    name: "Sentinel SAR-3",
-    kind: "SAR",
-    status: "tracking",
-    x: 23,
-    y: 22,
-    coverage: 132,
-    bearing: 38,
-    health: 96,
-    latency: "1.8s",
-    mode: "stripmap",
-    custodyContribution: 28,
-  },
-  {
-    id: "S2",
-    name: "Raven UAS-11",
-    kind: "UAS",
-    status: "searching",
-    x: 78,
-    y: 34,
-    coverage: 112,
-    bearing: 238,
-    health: 88,
-    latency: "3.2s",
-    mode: "EO slew",
-    custodyContribution: 18,
-  },
-  {
-    id: "S3",
-    name: "Mesa SIGINT",
-    kind: "SIGINT",
-    status: "tracking",
-    x: 66,
-    y: 72,
-    coverage: 144,
-    bearing: 304,
-    health: 91,
-    latency: "0.9s",
-    mode: "bearing fix",
-    custodyContribution: 21,
-  },
-  {
-    id: "S4",
-    name: "Coast AIS Fusion",
-    kind: "AIS",
-    status: "degraded",
-    x: 14,
-    y: 80,
-    coverage: 104,
-    bearing: 18,
-    health: 64,
-    latency: "14s",
-    mode: "spoof check",
-    custodyContribution: 9,
-  },
-  {
-    id: "S5",
-    name: "Overwatch EO",
-    kind: "EO",
-    status: "offline",
-    x: 87,
-    y: 78,
-    coverage: 92,
-    bearing: 280,
-    health: 0,
-    latency: "--",
-    mode: "maintenance",
-    custodyContribution: 0,
-  },
-];
+const chart = { width: 1100, height: 680 };
 
-const frames: CustodyFrame[] = [
-  {
-    id: "t0",
-    time: "14:02:10Z",
-    label: "Initial custody",
-    target: { x: 31, y: 68 },
-    confidence: 84,
-    state: "Firm",
-    velocity: "18 kt NE",
-    ambiguity: "Low",
-    supportingSensors: ["S1", "S3", "S4"],
-    explanation: [
-      "SAR return matches prior target size and course.",
-      "SIGINT bearing intersects predicted corridor.",
-      "AIS anomaly remains inside the uncertainty gate.",
-    ],
-    contestedFactors: ["Civilian traffic density rising west of track."],
+function toPercentPoint(point: { x: number; y: number }): TrackPoint {
+  return {
+    x: Math.max(2, Math.min(98, (point.x / chart.width) * 100)),
+    y: Math.max(2, Math.min(98, (point.y / chart.height) * 100)),
+  };
+}
+
+function sensorKind(sensor: ScenarioSensor): Sensor["kind"] {
+  if (sensor.type === "radar") return "SAR";
+  if (sensor.type === "eo") return "EO";
+  if (sensor.type === "rf") return "SIGINT";
+  return "AIS";
+}
+
+function sensorStatus(sensor: ScenarioSensor, time: number): SensorStatus {
+  if (sensor.type === "radar" && time >= 9 && time <= 13) return "offline";
+  if (sensor.type === "radar" && time >= 14 && time <= 16) return "degraded";
+  if (sensor.type === "ais" && time >= 7 && time <= 15) return "degraded";
+  if (sensor.type === "eo" && time >= 9 && time <= 14) return "searching";
+  return "tracking";
+}
+
+function modeForSensor(sensor: ScenarioSensor, status: SensorStatus): string {
+  if (status === "offline") return "masked";
+  if (sensor.type === "radar") return status === "degraded" ? "clutter gate" : "wide area";
+  if (sensor.type === "eo") return status === "searching" ? "slew search" : "visual ID";
+  if (sensor.type === "rf") return "bearing fix";
+  return status === "degraded" ? "spoof check" : "identity feed";
+}
+
+function makeSensors(frame: FusionFrame): Sensor[] {
+  return scenario.sensors.map((sensor) => {
+    const status = sensorStatus(sensor, frame.time);
+    const recommended = frame.recommendation.sensorId === sensor.id;
+
+    return {
+      id: sensor.id,
+      name: sensor.name,
+      kind: sensorKind(sensor),
+      status,
+      x: toPercentPoint(sensor.position).x,
+      y: toPercentPoint(sensor.position).y,
+      coverage: Math.round(Math.max(76, Math.min(156, sensor.range / 3))),
+      bearing: sensor.bearing,
+      health:
+        status === "offline"
+          ? 0
+          : status === "degraded"
+            ? 61
+            : recommended
+              ? 96
+              : Math.round(sensor.reliability * 100),
+      latency: `${Math.max(1, Math.round(sensor.latencySec * 0.7))}s`,
+      mode: modeForSensor(sensor, status),
+      custodyContribution: recommended
+        ? Math.round(frame.recommendation.probability * 100)
+        : Math.round(sensor.reliability * 18),
+    };
+  });
+}
+
+function frameState(frame: FusionFrame): CustodyFrame["state"] {
+  if (frame.track.mode === "lost") return "Reacquiring";
+  if (frame.track.confidence < 0.65 || frame.track.mode === "degraded") return "At Risk";
+  return "Firm";
+}
+
+function velocityLabel(frame: FusionFrame): string {
+  const speed = Math.hypot(frame.track.velocity.vx, frame.track.velocity.vy);
+  if (frame.track.mode === "lost") return "model-only";
+  return `${Math.round(speed)} px/tick`;
+}
+
+function ambiguityLabel(frame: FusionFrame): string {
+  if (frame.track.uncertainty > 110) return "High";
+  if (frame.track.uncertainty > 56) return "Medium";
+  return "Low";
+}
+
+function makeFrame(frame: FusionFrame): CustodyFrame {
+  const accepted = frame.associations.filter((association) => association.accepted);
+  const rejected = frame.associations.filter((association) => !association.accepted);
+  const event = frame.activeEvents.at(-1);
+  const recommendedSensor = scenario.sensors.find(
+    (sensor) => sensor.id === frame.recommendation.sensorId,
+  );
+  const confidence = Math.round(frame.track.confidence * 100);
+  const explanation =
+    accepted.length > 0
+      ? accepted.slice(0, 3).map((association) => association.reason)
+      : [
+          `Prediction-only update; belief radius expanded to ${Math.round(
+            frame.track.uncertainty,
+          )}px.`,
+          frame.track.mode === "lost"
+            ? "Custody is being carried by motion model and search-tasking logic."
+            : "No detection met the association gate this tick.",
+        ];
+  const contestedFactors =
+    rejected.length > 0
+      ? rejected.slice(0, 3).map((association) => association.reason)
+      : event
+        ? [event.description]
+        : ["No rejected detections in the current gate."];
+
+  return {
+    id: `t-${frame.time}`,
+    time: `T+${String(frame.time).padStart(2, "0")}`,
+    label: event?.title ?? (accepted.length > 0 ? "Multi-sensor update" : "Prediction update"),
+    target: toPercentPoint(frame.track.position),
+    confidence,
+    state: frameState(frame),
+    velocity: velocityLabel(frame),
+    ambiguity: ambiguityLabel(frame),
+    supportingSensors: accepted.map((association) => association.detection.sensorId),
+    explanation,
+    contestedFactors,
     recommendation: {
-      sensorId: "S2",
-      action: "Pre-position EO gimbal ahead of predicted turn point.",
-      eta: "00:42",
-      expectedGain: 7,
-      reason: "Clears shoreline clutter before the track crosses traffic.",
-      command: "TASK S2 / SLEW 044 / HOLD WIDE-FOV / AUTO-ID ON",
+      sensorId: frame.recommendation.sensorId,
+      action: `Task ${
+        recommendedSensor?.name ?? frame.recommendation.sensorId
+      } into the highest-probability custody region.`,
+      eta: `${Math.max(5, Math.round((recommendedSensor?.latencySec ?? 2) * 0.7))} sec`,
+      expectedGain: Math.round(Math.max(4, frame.recommendation.probability * 22)),
+      reason: frame.recommendation.reason,
+      command: `TASK ${frame.recommendation.sensorId.toUpperCase()} / CUSTODY-GATE / SCORE ${
+        frame.recommendation.score
+      }`,
     },
-  },
-  {
-    id: "t1",
-    time: "14:04:30Z",
-    label: "Crossing clutter",
-    target: { x: 43, y: 57 },
-    confidence: 72,
-    state: "At Risk",
-    velocity: "21 kt ENE",
-    ambiguity: "Medium",
-    supportingSensors: ["S1", "S3"],
-    explanation: [
-      "Two candidate tracks converge near the harbor approach.",
-      "SAR continuity holds but class confidence drops.",
-      "SIGINT bearing supports the northern candidate.",
-    ],
-    contestedFactors: ["AIS feed degraded.", "Low cloud ceiling limits passive EO."],
-    recommendation: {
-      sensorId: "S2",
-      action: "Narrow search box and collect three-second EO burst.",
-      eta: "00:18",
-      expectedGain: 12,
-      reason: "Fastest line of sight into the ambiguity gate.",
-      command: "TASK S2 / BOX 41-48E 54-60N / BURST 3S / REPORT TOP-2",
-    },
-  },
-  {
-    id: "t2",
-    time: "14:06:45Z",
-    label: "Custody dip",
-    target: { x: 56, y: 48 },
-    confidence: 58,
-    state: "Reacquiring",
-    velocity: "Unknown",
-    ambiguity: "High",
-    supportingSensors: ["S3"],
-    explanation: [
-      "Primary SAR revisit missed the expected centroid.",
-      "SIGINT still brackets the eastern escape route.",
-      "Model predicts a short turn behind high-clutter shoreline.",
-    ],
-    contestedFactors: ["Three decoys entered the gate.", "SAR revisit gap is now 92 seconds."],
-    recommendation: {
-      sensorId: "S1",
-      action: "Retask SAR to spotlight mode over eastern escape gate.",
-      eta: "01:05",
-      expectedGain: 18,
-      reason: "Highest discrimination against decoys in poor visibility.",
-      command: "TASK S1 / SPOTLIGHT GATE-E / PRIORITY IMMEDIATE / REVISIT 30S",
-    },
-  },
-  {
-    id: "t3",
-    time: "14:08:20Z",
-    label: "Reacquired",
-    target: { x: 68, y: 39 },
-    confidence: 81,
-    state: "Firm",
-    velocity: "24 kt ENE",
-    ambiguity: "Low",
-    supportingSensors: ["S1", "S2", "S3"],
-    explanation: [
-      "Spotlight SAR separated target from the decoy group.",
-      "EO burst confirms matching heading and wake geometry.",
-      "SIGINT bearing remains consistent with the fused track.",
-    ],
-    contestedFactors: ["EO custody will expire in 56 seconds without another cue."],
-    recommendation: {
-      sensorId: "S2",
-      action: "Trail target at standoff and hand off to next SAR revisit.",
-      eta: "00:25",
-      expectedGain: 9,
-      reason: "Maintains visual custody until the next radar-quality update.",
-      command: "TASK S2 / TRACK VX-2047 / STANDOFF 9KM / HANDOFF S1",
-    },
-  },
-  {
-    id: "t4",
-    time: "14:10:05Z",
-    label: "Handoff queued",
-    target: { x: 79, y: 31 },
-    confidence: 76,
-    state: "At Risk",
-    velocity: "26 kt E",
-    ambiguity: "Medium",
-    supportingSensors: ["S1", "S2"],
-    explanation: [
-      "Target is leaving UAS optimum geometry.",
-      "SAR predicts another short revisit gap near the boundary.",
-      "SIGINT line is blocked by terrain masking.",
-    ],
-    contestedFactors: ["Sensor S5 remains offline.", "Boundary handoff requires earlier cueing."],
-    recommendation: {
-      sensorId: "S3",
-      action: "Open wide-area RF scan to recover bearing after terrain mask.",
-      eta: "01:20",
-      expectedGain: 11,
-      reason: "Provides non-visual custody through the boundary handoff.",
-      command: "TASK S3 / WIDE RF SCAN / BEARING-ONLY / PUSH TO FUSION",
-    },
-  },
-];
+  };
+}
 
 function App() {
+  const fusionFrames = useMemo(() => runFusion(scenario), []);
+  const frames = useMemo(() => fusionFrames.map(makeFrame), [fusionFrames]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
@@ -231,9 +169,11 @@ function App() {
   }, [frames.length, isPlaying, speed]);
 
   const activeFrame = frames[activeIndex];
+  const activeFusionFrame = fusionFrames[activeIndex];
+  const sensors = useMemo(() => makeSensors(activeFusionFrame), [activeFusionFrame]);
   const trackHistory = useMemo(
     () => frames.slice(0, activeIndex + 1).map((frame) => frame.target),
-    [activeIndex],
+    [activeIndex, frames],
   );
   const recommendedSensor = sensors.find(
     (sensor) => sensor.id === activeFrame.recommendation.sensorId,
@@ -260,18 +200,18 @@ function App() {
           </div>
         </div>
         <div className="mission-strip" aria-label="Mission status">
-          <span><Layers size={15} aria-hidden="true" /> Problem Statement 1</span>
-          <span><ScanLine size={15} aria-hidden="true" /> Track VX-2047</span>
-          <span>Littoral reacquisition drill</span>
+          <span>
+            <Layers size={15} aria-hidden="true" /> Problem Statement 1
+          </span>
+          <span>
+            <ScanLine size={15} aria-hidden="true" /> Track VX-2047
+          </span>
+          <span>{scenario.name}</span>
         </div>
       </header>
 
       <main className="operations-layout">
-        <MapSituationPanel
-          frame={activeFrame}
-          sensors={sensors}
-          trackHistory={trackHistory}
-        />
+        <MapSituationPanel frame={activeFrame} sensors={sensors} trackHistory={trackHistory} />
 
         <aside className="right-rail" aria-label="Custody decision panels">
           <CustodyConfidence frame={activeFrame} />

@@ -33,6 +33,15 @@ export function TimelineReplay({
   onSpeedChange,
 }: TimelineReplayProps) {
   const activeFrame = frames[activeIndex];
+  const interval = Math.max(1, Math.ceil(frames.length / 7));
+  const visibleIndexes = Array.from(
+    new Set([
+      0,
+      activeIndex,
+      frames.length - 1,
+      ...frames.map((_, index) => index).filter((index) => index % interval === 0),
+    ]),
+  ).sort((left, right) => left - right);
 
   return (
     <section className="panel timeline-panel" aria-labelledby="timeline-title">
@@ -100,7 +109,9 @@ export function TimelineReplay({
       />
 
       <div className="timeline-events">
-        {frames.map((frame, index) => (
+        {visibleIndexes.map((index) => {
+          const frame = frames[index];
+          return (
           <button
             key={frame.id}
             className={`timeline-event ${index === activeIndex ? "active" : ""}`}
@@ -110,7 +121,8 @@ export function TimelineReplay({
             <span>{frame.time}</span>
             <strong>{frame.label}</strong>
           </button>
-        ))}
+          );
+        })}
       </div>
 
       <div className="speed-control" aria-label="Replay speed">
