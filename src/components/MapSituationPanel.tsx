@@ -1,6 +1,7 @@
 import {
   Activity,
   Crosshair,
+  FileWarning,
   Map,
   Navigation,
   RadioTower,
@@ -77,10 +78,46 @@ export function MapSituationPanel({
               className="uncertainty-ellipse"
               cx={frame.target.x}
               cy={frame.target.y}
-              rx={frame.confidence < 70 ? 8.4 : 5.6}
-              ry={frame.confidence < 70 ? 5.8 : 3.9}
+              rx={Math.max(5.6, Math.min(15, frame.uncertainty / 11))}
+              ry={Math.max(3.9, Math.min(10, frame.uncertainty / 16))}
               transform={`rotate(-21 ${frame.target.x} ${frame.target.y})`}
             />
+            <line
+              className="prediction-link"
+              x1={frame.target.x}
+              y1={frame.target.y}
+              x2={frame.prediction.x}
+              y2={frame.prediction.y}
+            />
+            <circle className="prediction-dot" cx={frame.prediction.x} cy={frame.prediction.y} r="1.15" />
+            {frame.detections.map((detection) => (
+              <g
+                className={`detection-marker ${detection.accepted ? "accepted" : "rejected"} ${
+                  detection.spoofed ? "spoofed" : ""
+                }`}
+                key={detection.id}
+              >
+                <circle
+                  className="detection-uncertainty"
+                  cx={detection.x}
+                  cy={detection.y}
+                  r={detection.uncertainty}
+                />
+                <circle className="detection-core" cx={detection.x} cy={detection.y} r="1.55">
+                  <title>
+                    {detection.sensorId} / {detection.label} / score {detection.score}
+                  </title>
+                </circle>
+                {detection.spoofed ? (
+                  <path
+                    className="spoof-x"
+                    d={`M ${detection.x - 1.6} ${detection.y - 1.6} L ${detection.x + 1.6} ${
+                      detection.y + 1.6
+                    } M ${detection.x + 1.6} ${detection.y - 1.6} L ${detection.x - 1.6} ${detection.y + 1.6}`}
+                  />
+                ) : null}
+              </g>
+            ))}
             <circle className="target-ring outer" cx={frame.target.x} cy={frame.target.y} r="4.8" />
             <circle className="target-ring inner" cx={frame.target.x} cy={frame.target.y} r="2.2" />
           </svg>
@@ -129,9 +166,27 @@ export function MapSituationPanel({
             <span>Track VX-2047</span>
             <strong>{frame.state}</strong>
           </div>
+          <div className="map-readout evidence-readout">
+            <span>Fusion evidence</span>
+            <strong>{frame.metrics.accepted} accepted / {frame.metrics.rejected} rejected</strong>
+          </div>
           <div className="map-readout coord-readout">
-            <span>Lat / Lon</span>
-            <strong>34.62N 58.14E</strong>
+            <span>Uncertainty / cue</span>
+            <strong>{frame.uncertainty}px / {frame.metrics.bestSensor}</strong>
+          </div>
+          {frame.eventCallout ? (
+            <div className={`map-callout callout-${frame.eventCallout.severity}`}>
+              <FileWarning size={15} aria-hidden="true" />
+              <div>
+                <span>{frame.eventCallout.title}</span>
+                <strong>{frame.eventCallout.description}</strong>
+              </div>
+            </div>
+          ) : null}
+          <div className="fusion-legend" aria-hidden="true">
+            <span><i className="legend-dot accepted" /> accepted</span>
+            <span><i className="legend-dot rejected" /> rejected</span>
+            <span><i className="legend-dot spoofed" /> spoofed</span>
           </div>
         </div>
       </div>

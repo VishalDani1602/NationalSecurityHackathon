@@ -303,6 +303,61 @@ button {
   stroke-dasharray: 1.2 1.1;
 }
 
+.prediction-link {
+  stroke: rgba(240, 202, 108, 0.34);
+  stroke-width: 0.24;
+  stroke-dasharray: 1.4 1.2;
+}
+
+.prediction-dot {
+  fill: #101411;
+  stroke: rgba(240, 202, 108, 0.84);
+  stroke-width: 0.34;
+}
+
+.detection-marker {
+  pointer-events: auto;
+}
+
+.detection-uncertainty {
+  fill: rgba(255, 255, 255, 0.035);
+  stroke-width: 0.22;
+}
+
+.detection-core {
+  stroke-width: 0.42;
+}
+
+.detection-marker.accepted .detection-uncertainty {
+  stroke: rgba(122, 166, 108, 0.48);
+}
+
+.detection-marker.accepted .detection-core {
+  fill: rgba(122, 166, 108, 0.9);
+  stroke: rgba(213, 239, 204, 0.88);
+}
+
+.detection-marker.rejected .detection-uncertainty {
+  stroke: rgba(212, 118, 95, 0.5);
+  stroke-dasharray: 0.8 0.7;
+}
+
+.detection-marker.rejected .detection-core {
+  fill: rgba(212, 118, 95, 0.86);
+  stroke: rgba(255, 206, 193, 0.82);
+}
+
+.detection-marker.spoofed .detection-core {
+  fill: rgba(217, 155, 86, 0.95);
+}
+
+.spoof-x {
+  fill: none;
+  stroke: #111611;
+  stroke-width: 0.42;
+  stroke-linecap: round;
+}
+
 .target-ring {
   fill: none;
   stroke: rgba(240, 202, 108, 0.75);
@@ -493,6 +548,120 @@ button {
 .coord-readout {
   right: 12px;
   bottom: 12px;
+}
+
+.evidence-readout {
+  left: 12px;
+  bottom: 12px;
+}
+
+.map-callout,
+.fusion-legend {
+  position: absolute;
+  z-index: 6;
+  border: 1px solid rgba(207, 218, 199, 0.16);
+  border-radius: 4px;
+  background: rgba(10, 14, 11, 0.8);
+  backdrop-filter: blur(10px);
+}
+
+.map-callout {
+  left: 50%;
+  top: 12px;
+  width: min(420px, calc(100% - 260px));
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 9px;
+  align-items: start;
+  padding: 9px 10px;
+  transform: translateX(-50%);
+}
+
+.map-callout svg {
+  margin-top: 2px;
+  color: var(--accent-strong);
+}
+
+.map-callout span {
+  display: block;
+  color: var(--accent-strong);
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.map-callout strong {
+  display: block;
+  margin-top: 3px;
+  color: #d7dfd1;
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.callout-critical {
+  border-color: rgba(212, 118, 95, 0.42);
+}
+
+.callout-critical svg,
+.callout-critical span {
+  color: #f0a08a;
+}
+
+.callout-warning {
+  border-color: rgba(217, 155, 86, 0.42);
+}
+
+.callout-warning svg,
+.callout-warning span {
+  color: var(--orange);
+}
+
+.callout-success {
+  border-color: rgba(122, 166, 108, 0.42);
+}
+
+.callout-success svg,
+.callout-success span {
+  color: #a8d99b;
+}
+
+.fusion-legend {
+  right: 12px;
+  top: 64px;
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  padding: 6px 8px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 780;
+  text-transform: uppercase;
+}
+
+.fusion-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.legend-dot.accepted {
+  background: var(--green);
+}
+
+.legend-dot.rejected {
+  background: var(--red);
+}
+
+.legend-dot.spoofed {
+  background: var(--orange);
 }
 
 .right-rail {

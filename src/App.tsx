@@ -6,7 +6,7 @@ import { MapSituationPanel } from "./components/MapSituationPanel";
 import { NextBestSensor } from "./components/NextBestSensor";
 import { SensorStatusPanel } from "./components/SensorStatusPanel";
 import { TimelineReplay } from "./components/TimelineReplay";
-import type { CustodyFrame, Sensor, SensorStatus, TrackPoint } from "./components/types";
+import type { CustodyFrame, DetectionMarker, Sensor, SensorStatus, TrackPoint } from "./components/types";
 import { runFusion } from "./lib/fusion";
 import { scenario } from "./lib/scenario";
 import type { FusionFrame, Sensor as ScenarioSensor } from "./lib/types";
@@ -25,6 +25,11 @@ function sensorKind(sensor: ScenarioSensor): Sensor["kind"] {
   if (sensor.type === "eo") return "EO";
   if (sensor.type === "rf") return "SIGINT";
   return "AIS";
+}
+
+function sensorKindById(sensorId: string): Sensor["kind"] {
+  const sensor = scenario.sensors.find((candidate) => candidate.id === sensorId);
+  return sensor ? sensorKind(sensor) : "AIS";
 }
 
 function sensorStatus(sensor: ScenarioSensor, time: number): SensorStatus {
@@ -92,7 +97,21 @@ function ambiguityLabel(frame: FusionFrame): string {
   return "Low";
 }
 
-function makeFrame(frame: FusionFrame): CustodyFrame {
+function makeDetectionMarkers(frame: FusionFrame): DetectionMarker[] {
+  return frame.associations.map((association) => ({
+    id: association.detection.id,
+    sensorId: association.detection.sensorId,
+    kind: sensorKindById(association.detection.sensorId),
+    ...toPercentPoint(association.detection.position),
+    uncertainty: Math.max(1.5, Math.min(8.5, (association.detection.uncertainty / chart.width) * 100)),
+    accepted: association.accepted,
+    spoofed: Boolean(association.detection.spoofed),
+    label: association.detection.label,
+    score: Math.round(association.score),
+  }));
+}
+
+function makeFrame(frame: FusionFrame, previousFrame?: FusionFrame): CustodyFrame {
   const accepted = frame.associations.filter((association) => association.accepted);
   const rejected = frame.associations.filter((association) => !association.accepted);
   const event = frame.activeEvents.at(-1);
@@ -123,13 +142,32 @@ function makeFrame(frame: FusionFrame): CustodyFrame {
     time: `T+${String(frame.time).padStart(2, "0")}`,
     label: event?.title ?? (accepted.length > 0 ? "Multi-sensor update" : "Prediction update"),
     target: toPercentPoint(frame.track.position),
+    prediction: toPercentPoint(frame.prediction),
+    uncertainty: Math.round(frame.track.uncertainty),
     confidence,
     state: frameState(frame),
     velocity: velocityLabel(frame),
     ambiguity: ambiguityLabel(frame),
+    detections: makeDetectionMarkers(frame),
     supportingSensors: accepted.map((association) => association.detection.sensorId),
     explanation,
     contestedFactors,
+    metrics: {
+      accepted: accepted.length,
+      rejected: rejected.length,
+      totalDetections: frame.detections.length,
+      confidenceDelta: previousFrame
+        ? Math.round((frame.track.confidence - previousFrame.track.confidence) * 100)
+        : 0,
+      bestSensor: frame.recommendation.sensorId,
+    },
+    eventCallout: event
+      ? {
+          title: event.title,
+          description: event.description,
+          severity: event.severity,
+        }
+      : undefined,
     recommendation: {
       sensorId: frame.recommendation.sensorId,
       action: `Task ${
@@ -147,7 +185,10 @@ function makeFrame(frame: FusionFrame): CustodyFrame {
 
 function App() {
   const fusionFrames = useMemo(() => runFusion(scenario), []);
-  const frames = useMemo(() => fusionFrames.map(makeFrame), [fusionFrames]);
+  const frames = useMemo(
+    () => fusionFrames.map((frame, index) => makeFrame(frame, fusionFrames[index - 1])),
+    [fusionFrames],
+  );
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
